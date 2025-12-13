@@ -11,18 +11,20 @@ wss.on('connection', function connection(ws) {
   ws.on('message', function incoming(message) {
     try {
       const data = JSON.parse(message);
-
+      
       // 1. LISTEN FOR ROOM REQUEST
       if (data.type === 'join_room' || data.type === 'create_room') {
         
         console.log(`Player joining room: ${data.roomCode}`);
         
-        // 2. SEND THE CONFIRMATION (This stops the loading spinner!)
-        ws.send(JSON.stringify({
+        // 2. SEND THE CONFIRMATION (The part you are missing!)
+        const reply = JSON.stringify({
           type: 'room_joined',
           roomCode: data.roomCode,
           success: true
-        }));
+        });
+        
+        ws.send(reply);
       }
       
       // 3. HANDLE GAME MOVES
