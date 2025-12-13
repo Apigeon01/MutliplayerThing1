@@ -11,24 +11,21 @@ wss.on('connection', function connection(ws) {
   ws.on('message', function incoming(message) {
     try {
       const data = JSON.parse(message);
-      console.log('Received:', data);
-
-      // 1. THIS IS THE MISSING PIECE
-      // When App says "join_room", Server must reply "room_joined"
+      
+      // THIS IS THE FIX:
+      // When App asks to join, we MUST reply with "room_joined"
       if (data.type === 'join_room' || data.type === 'create_room') {
+        console.log(`Player joined room: ${data.roomCode}`);
         
-        console.log(`Player joining room: ${data.roomCode}`);
-        
-        const reply = JSON.stringify({
+        // Send the "OK" signal back to the app
+        ws.send(JSON.stringify({
           type: 'room_joined',
           roomCode: data.roomCode,
           success: true
-        });
-        
-        ws.send(reply); // Send the "OK" back to the app
+        }));
       }
       
-      // 2. Forward other game messages (movement)
+      // Handle game movement
       else {
         wss.clients.forEach(function each(client) {
           if (client !== ws && client.readyState === WebSocket.OPEN) {
