@@ -11,13 +11,13 @@ wss.on('connection', function connection(ws) {
   ws.on('message', function incoming(message) {
     try {
       const data = JSON.parse(message);
-      
-      // THIS IS THE FIX:
-      // When App asks to join, we MUST reply with "room_joined"
+
+      // 1. LISTEN FOR ROOM REQUEST
       if (data.type === 'join_room' || data.type === 'create_room') {
-        console.log(`Player joined room: ${data.roomCode}`);
         
-        // Send the "OK" signal back to the app
+        console.log(`Player joining room: ${data.roomCode}`);
+        
+        // 2. SEND THE CONFIRMATION (This stops the loading spinner!)
         ws.send(JSON.stringify({
           type: 'room_joined',
           roomCode: data.roomCode,
@@ -25,7 +25,7 @@ wss.on('connection', function connection(ws) {
         }));
       }
       
-      // Handle game movement
+      // 3. HANDLE GAME MOVES
       else {
         wss.clients.forEach(function each(client) {
           if (client !== ws && client.readyState === WebSocket.OPEN) {
