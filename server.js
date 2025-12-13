@@ -8,10 +8,10 @@ console.log(`Server started on port ${port}`);
 wss.on('connection', function connection(ws) {
   console.log('Player connected!');
 
-  // Send Welcome Message
+  // SEND A WELCOME MESSAGE IMMEDIATELY
   ws.send(JSON.stringify({ 
     type: 'welcome', 
-    content: 'Connection established!' 
+    content: 'Connected successfully!' 
   }));
   
   ws.on('message', function incoming(data) {
