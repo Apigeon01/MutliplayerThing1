@@ -11,23 +11,25 @@ wss.on('connection', function connection(ws) {
   ws.on('message', function incoming(message) {
     try {
       const data = JSON.parse(message);
+      console.log('Received:', data);
 
-      // 1. LISTEN FOR ROOM REQUESTS
-      if (data.type === 'join_room') {
-        const roomCode = data.roomCode;
-        console.log(`Player joining room: ${roomCode}`);
+      // 1. THIS IS THE MISSING PIECE
+      // When App says "join_room", Server must reply "room_joined"
+      if (data.type === 'join_room' || data.type === 'create_room') {
         
-        // 2. SEND THE CONFIRMATION (This stops the spinner!)
-        ws.send(JSON.stringify({
+        console.log(`Player joining room: ${data.roomCode}`);
+        
+        const reply = JSON.stringify({
           type: 'room_joined',
-          roomCode: roomCode,
+          roomCode: data.roomCode,
           success: true
-        }));
+        });
+        
+        ws.send(reply); // Send the "OK" back to the app
       }
       
-      // 3. BROADCAST GAME MOVES
+      // 2. Forward other game messages (movement)
       else {
-        // Send to everyone else (Simplified for now)
         wss.clients.forEach(function each(client) {
           if (client !== ws && client.readyState === WebSocket.OPEN) {
             client.send(message);
