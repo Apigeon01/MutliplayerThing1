@@ -4,10 +4,10 @@ const fs = require('fs');
 
 const port = process.env.PORT || 10000;
 const wss = new WebSocket.Server({ port: port });
-const ADMIN_PASSWORD = "PigeonCoo"; // Change this if you want
+const ADMIN_PASSWORD = "MY_SECRET_PASS"; 
 
 // ========================================================
-// ✅ YOUR APPLE KEYS ARE PRE-FILLED BELOW
+// ✅ APPLE KEYS (Keep these safe)
 // ========================================================
 const apnOptions = {
   token: {
@@ -28,14 +28,22 @@ const YOUR_BUNDLE_ID = "app.bitrig.londoncreane.memorymatch";
 const apnProvider = new apn.Provider(apnOptions);
 const deviceTokens = new Set(); 
 
-// --- DATABASE SETUP (Saves to a file) ---
+// --- ROBUST DATABASE SETUP ---
 const DB_FILE = 'database.json';
 let db = { scores: [], feedback: [] };
 
-// Load existing data if file exists
+// Load data safely
 if (fs.existsSync(DB_FILE)) {
-  try { db = JSON.parse(fs.readFileSync(DB_FILE)); } 
-  catch (e) { console.log("Starting new database"); }
+  try { 
+    const raw = fs.readFileSync(DB_FILE);
+    db = JSON.parse(raw);
+    // 🚨 Fix: Ensure arrays exist if file is old
+    if (!db.scores) db.scores = [];
+    if (!db.feedback) db.feedback = [];
+  } catch (e) { 
+    console.log("Database corrupted, starting fresh."); 
+    db = { scores: [], feedback: [] };
+  }
 }
 
 function saveDB() {
@@ -45,41 +53,42 @@ function saveDB() {
 console.log(`Server started on port ${port}`);
 
 wss.on('connection', function connection(ws) {
+  console.log("New Player Connected!"); // Log connection
+
   ws.on('message', function incoming(message) {
     try {
-      const data = JSON.parse(message);
+      console.log("Received raw message:", message.toString()); // 🚨 LOG EVERYTHING
+      
+      let data;
+      try { data = JSON.parse(message); }
+      catch(e) { console.log("Not JSON"); return; }
 
-      // --- 1. ADMIN NOTIFICATION (FIXED) ---
-      if (data.type === 'admin_broadcast') {
-        if (data.password === ADMIN_PASSWORD) {
-          console.log("Admin broadcast received.");
+      // --- 1. LEADERBOARDS ---
+      if (data.type === 'get_leaderboard') {
+        console.log("Fetching Leaderboard...");
+        const now = new Date();
+        
+        // Safety check: ensure scores exists
+        let list = db.scores || [];
+        
+        let filtered = list.filter(s => s.mode === data.mode);
+        
+        // Sort & Limit
+        const top100 = filtered.sort((a, b) => a.time - b.time).slice(0, 100);
 
-          // A. Send "In-App" Banner to everyone currently connected
-          const inAppMsg = JSON.stringify({
-            type: 'notification',
-            title: data.title,
-            body: data.body
-          });
-          wss.clients.forEach(c => { if (c.readyState === 1) c.send(inAppMsg); });
-
-          // B. Send "Push Notification" (Only if the toggle is ON)
-          if (data.sendPush === true) {
-            console.log(`Sending APNs to ${deviceTokens.size} devices...`);
-            const note = new apn.Notification();
-            note.expiry = Math.floor(Date.now() / 1000) + 3600;
-            note.badge = 1;
-            note.sound = "ping.aiff";
-            note.alert = { title: data.title, body: data.body };
-            note.topic = YOUR_BUNDLE_ID;
-            
-            deviceTokens.forEach(t => apnProvider.send(note, t));
-          }
-        }
+        const response = JSON.stringify({ 
+          type: 'leaderboard_data', 
+          scores: top100,
+          period: data.period 
+        });
+        
+        ws.send(response);
+        console.log("Sent Leaderboard Data!");
       }
 
-      // --- 2. LEADERBOARDS (NEW) ---
+      // --- 2. SUBMIT SCORE ---
       else if (data.type === 'submit_score') {
-        // Expected: { username: "Name", time: 12.5, mode: "Hard" }
+        if (!db.scores) db.scores = [];
         db.scores.push({
           username: data.username,
           time: data.time,
@@ -87,40 +96,27 @@ wss.on('connection', function connection(ws) {
           date: new Date().toISOString()
         });
         saveDB();
+        console.log("Score Saved:", data.time);
       }
 
-      else if (data.type === 'get_leaderboard') {
-        const now = new Date();
-        // Filter by Mode
-        let filtered = db.scores.filter(s => s.mode === data.mode);
+      // --- 3. ADMIN & PUSH ---
+      else if (data.type === 'admin_broadcast') {
+        if (data.password === ADMIN_PASSWORD) {
+          // Send In-App
+          const banner = JSON.stringify({ type: 'notification', title: data.title, body: data.body });
+          wss.clients.forEach(c => { if (c.readyState === 1) c.send(banner); });
 
-        // Filter by Time Period (Daily, Monthly, All Time)
-        if (data.period === 'daily') {
-          filtered = filtered.filter(s => s.date.startsWith(now.toISOString().split('T')[0]));
-        } else if (data.period === 'monthly') {
-          filtered = filtered.filter(s => s.date.substring(0, 7) === now.toISOString().substring(0, 7));
+          // Send Push
+          if (data.sendPush === true) {
+            const note = new apn.Notification();
+            note.expiry = Math.floor(Date.now() / 1000) + 3600;
+            note.badge = 1;
+            note.sound = "ping.aiff";
+            note.alert = { title: data.title, body: data.body };
+            note.topic = YOUR_BUNDLE_ID;
+            deviceTokens.forEach(t => apnProvider.send(note, t));
+          }
         }
-
-        // Sort (Fastest time first) & Limit to Top 100
-        const top100 = filtered.sort((a, b) => a.time - b.time).slice(0, 100);
-
-        ws.send(JSON.stringify({ 
-          type: 'leaderboard_data', 
-          scores: top100, 
-          mode: data.mode, 
-          period: data.period 
-        }));
-      }
-
-      // --- 3. FEEDBACK (NEW) ---
-      else if (data.type === 'send_feedback') {
-        db.feedback.push({
-          msg: data.message,
-          category: data.category,
-          date: new Date().toISOString()
-        });
-        saveDB();
-        console.log("Feedback saved.");
       }
 
       // --- 4. EXTRAS ---
@@ -131,10 +127,9 @@ wss.on('connection', function connection(ws) {
         ws.send(JSON.stringify({ type: 'room_joined', roomCode: data.roomCode, success: true }));
       }
       else {
-        // Game movement
         wss.clients.forEach(c => { if (c!==ws && c.readyState===1) c.send(message); });
       }
 
-    } catch (e) { console.error("Error:", e); }
+    } catch (e) { console.error("Server Error:", e); }
   });
 });
